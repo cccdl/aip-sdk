@@ -1,0 +1,19 @@
+{
+  "name": "cccdl/aip-sdk",
+  "description": "baidu sdk for php",
+  "type": "library",
+  "license": "MIT",
+  "authors": [
+    {
+      "name": "dl",
+      "email": "568078220@qq.com",
+      "role": "Developer"
+    }
+  ],
+  "require": {},
+  "autoload": {
+    "psr-4": {
+      "cccdl\\aip_sdk\\": "./src/"
+    }
+  }
+}
