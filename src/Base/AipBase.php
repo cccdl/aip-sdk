@@ -61,6 +61,22 @@ class AipBase
      * @var array
      */
     protected $scope = 'brain_all_scope';
+    /**
+     * @var null
+     */
+    private $isCloudUser;
+    /**
+     * @var AipHttpClient
+     */
+    private $client;
+    /**
+     * @var string
+     */
+    private $version = '2_2_20';
+    /**
+     * @var array
+     */
+    private $proxies = [];
 
     /**
      * @param string $appId
@@ -74,8 +90,6 @@ class AipBase
         $this->secretKey = trim($secretKey);
         $this->isCloudUser = null;
         $this->client = new AipHttpClient();
-        $this->version = '2_2_20';
-        $this->proxies = [];
     }
 
     /**
@@ -108,9 +122,7 @@ class AipBase
 
     /**
      * 代理
-     * @param array $proxy
-     * @return string
-     *
+     * @param $proxies
      */
     public function setProxies($proxies)
     {
@@ -122,9 +134,8 @@ class AipBase
      * @param string $url
      * @param array $params
      * @param array $data
-     * @param array $headers
      */
-    protected function proccessRequest($url, &$params, &$data, $headers)
+    protected function proccessRequest($url, &$params, &$data)
     {
         $params['aipSdk'] = 'php';
         $params['aipSdkVersion'] = $this->version;
@@ -139,11 +150,6 @@ class AipBase
     protected function request($url, $data, $headers = [])
     {
         try {
-            $result = $this->validate($url, $data);
-            if ($result !== true) {
-                return $result;
-            }
-
             $params = [];
             $authObj = $this->auth();
 
@@ -152,76 +158,12 @@ class AipBase
             }
 
             // 特殊处理
-            $this->proccessRequest($url, $params, $data, $headers);
+            $this->proccessRequest($url, $params, $data);
 
             $headers = $this->getAuthHeaders('POST', $url, $params, $headers);
             $response = $this->client->post($url, $data, $params, $headers);
 
-            $obj = $this->proccessResult($response['content']);
-
-            if (!$this->isCloudUser && isset($obj['error_code']) && $obj['error_code'] == 110) {
-                $authObj = $this->auth(true);
-                $params['access_token'] = $authObj['access_token'];
-                $response = $this->client->post($url, $data, $params, $headers);
-                $obj = $this->proccessResult($response['content']);
-            }
-
-            if (empty($obj) || !isset($obj['error_code'])) {
-                $this->writeAuthObj($authObj);
-            }
-        } catch (cccdlException $e) {
-            return [
-                'error_code' => 'SDK108',
-                'error_msg' => 'connection or read data timeout',
-            ];
-        }
-
-        return $obj;
-    }
-
-    /**
-     * Api 多个并发请求
-     * @param string $url
-     * @param mixed $data
-     * @return mixed
-     */
-    protected function multi_request($url, $data)
-    {
-        try {
-            $params = [];
-            $authObj = $this->auth();
-            $headers = $this->getAuthHeaders('POST', $url);
-
-            if ($this->isCloudUser === false) {
-                $params['access_token'] = $authObj['access_token'];
-            }
-
-            $responses = $this->client->multi_post($url, $data, $params, $headers);
-
-            $is_success = false;
-            foreach ($responses as $response) {
-                $obj = $this->proccessResult($response['content']);
-
-                if (empty($obj) || !isset($obj['error_code'])) {
-                    $is_success = true;
-                }
-
-                if (!$this->isCloudUser && isset($obj['error_code']) && $obj['error_code'] == 110) {
-                    $authObj = $this->auth(true);
-                    $params['access_token'] = $authObj['access_token'];
-                    $responses = $this->client->post($url, $data, $params, $headers);
-                    break;
-                }
-            }
-
-            if ($is_success) {
-                $this->writeAuthObj($authObj);
-            }
-
-            $objs = [];
-            foreach ($responses as $response) {
-                $objs[] = $this->proccessResult($response['content']);
-            }
+            return $this->proccessResult($response['content']);
 
         } catch (cccdlException $e) {
             return [
@@ -230,19 +172,9 @@ class AipBase
             ];
         }
 
-        return $objs;
+
     }
 
-    /**
-     * 格式检查
-     * @param string $url
-     * @param array $data
-     * @return mix
-     */
-    protected function validate($url, &$data)
-    {
-        return true;
-    }
 
     /**
      * 格式化结果
@@ -255,65 +187,12 @@ class AipBase
     }
 
     /**
-     * 返回 access token 路径
-     * @return string
-     */
-    private function getAuthFilePath()
-    {
-        return dirname(__FILE__) . DIRECTORY_SEPARATOR . md5($this->apiKey);
-    }
-
-    /**
-     * 写入本地文件
-     * @param array $obj
-     * @return void
-     */
-    private function writeAuthObj($obj)
-    {
-        if ($obj === null || (isset($obj['is_read']) && $obj['is_read'] === true)) {
-            return;
-        }
-
-        $obj['time'] = time();
-        $obj['is_cloud_user'] = $this->isCloudUser;
-        @file_put_contents($this->getAuthFilePath(), json_encode($obj));
-    }
-
-    /**
-     * 读取本地缓存
-     * @return array
-     */
-    private function readAuthObj()
-    {
-        $content = @file_get_contents($this->getAuthFilePath());
-        if ($content !== false) {
-            $obj = json_decode($content, true);
-            $this->isCloudUser = $obj['is_cloud_user'];
-            $obj['is_read'] = true;
-            if ($this->isCloudUser || $obj['time'] + $obj['expires_in'] - 30 > time()) {
-                return $obj;
-            }
-        }
-
-        return null;
-    }
-
-    /**
      * 认证
-     * @param bool $refresh 是否刷新
      * @return array
+     * @throws cccdlException
      */
-    private function auth($refresh = false)
+    private function auth()
     {
-
-        //非过期刷新
-        if (!$refresh) {
-            $obj = $this->readAuthObj();
-            if (!empty($obj)) {
-                return $obj;
-            }
-        }
-
         $response = $this->client->get($this->accessTokenUrl, [
             'grant_type' => 'client_credentials',
             'client_id' => $this->apiKey,
@@ -345,8 +224,10 @@ class AipBase
     /**
      * @param string $method HTTP method
      * @param string $url
-     * @param array $param 参数
+     * @param array $params
+     * @param array $headers
      * @return array
+     * @throws cccdlException
      */
     private function getAuthHeaders($method, $url, $params = [], $headers = [])
     {
@@ -386,7 +267,7 @@ class AipBase
     /**
      * 反馈
      *
-     * @param array $feedbacks
+     * @param $feedback
      * @return array
      */
     public function report($feedback)

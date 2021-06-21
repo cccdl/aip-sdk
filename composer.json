@@ -10,7 +10,10 @@
       "role": "Developer"
     }
   ],
-  "require": {},
+  "require": {
+    "ext-json": "*",
+    "ext-curl": "*"
+  },
   "autoload": {
     "psr-4": {
       "cccdl\\aip_sdk\\": "./src/"

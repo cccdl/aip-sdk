@@ -24,6 +24,22 @@ use cccdl\aip_sdk\Exception\cccdlException;
  */
 class AipHttpClient
 {
+    /**
+     * @var array
+     */
+    private $headers;
+    /**
+     * @var int
+     */
+    private $connectTimeout;
+    /**
+     * @var int
+     */
+    private $socketTimeout;
+    /**
+     * @var array
+     */
+    private $conf;
 
     /**
      * HttpClient
@@ -78,9 +94,10 @@ class AipHttpClient
     /**
      * @param string $url
      * @param array $data HTTP POST BODY
-     * @param array $param HTTP URL
+     * @param array $params
      * @param array $headers HTTP header
      * @return array
+     * @throws cccdlException
      */
     public function post($url, $data = [], $params = [], $headers = [])
     {
@@ -112,62 +129,13 @@ class AipHttpClient
         ];
     }
 
-    /**
-     * @param string $url
-     * @param array $datas HTTP POST BODY
-     * @param array $param HTTP URL
-     * @param array $headers HTTP header
-     * @return array
-     */
-    public function multi_post($url, $datas = [], $params = [], $headers = [])
-    {
-        $url = $this->buildUrl($url, $params);
-        $headers = array_merge($this->headers, $this->buildHeaders($headers));
-
-        $chs = [];
-        $result = [];
-        $mh = curl_multi_init();
-        foreach ($datas as $data) {
-            $ch = curl_init();
-            $chs[] = $ch;
-            $this->prepare($ch);
-            curl_setopt($ch, CURLOPT_URL, $url);
-            curl_setopt($ch, CURLOPT_POST, 1);
-            curl_setopt($ch, CURLOPT_HEADER, false);
-            curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-            curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
-            curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
-            curl_setopt($ch, CURLOPT_POSTFIELDS, is_array($data) ? http_build_query($data) : $data);
-            curl_setopt($ch, CURLOPT_TIMEOUT_MS, $this->socketTimeout);
-            curl_setopt($ch, CURLOPT_CONNECTTIMEOUT_MS, $this->connectTimeout);
-            curl_multi_add_handle($mh, $ch);
-        }
-
-        $running = null;
-        do {
-            curl_multi_exec($mh, $running);
-            usleep(100);
-        } while ($running);
-
-        foreach ($chs as $ch) {
-            $content = curl_multi_getcontent($ch);
-            $code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-            $result[] = [
-                'code' => $code,
-                'content' => $content,
-            ];
-            curl_multi_remove_handle($mh, $ch);
-        }
-        curl_multi_close($mh);
-
-        return $result;
-    }
 
     /**
      * @param string $url
-     * @param array $param HTTP URL
+     * @param array $params
      * @param array $headers HTTP header
      * @return array
+     * @throws cccdlException
      */
     public function get($url, $params = [], $headers = [])
     {

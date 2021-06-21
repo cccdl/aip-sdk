@@ -578,7 +578,6 @@ class AipFace extends AipBase
      */
     public function match($images)
     {
-
         return $this->request($this->matchUrl, json_encode($images), [
             'Content-Type' => 'application/json',
         ]);
